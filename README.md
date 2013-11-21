@@ -27,7 +27,7 @@ Will be rendered:
 <article>
     <span class="date">21/11/2013</span>
     <h2>
-        <a href="example/html">ZenML template example</a>
+        <a href="example.html">ZenML template example</a>
     </h2>
 </article>
 <p>This paragraph is below the article tag.</p>
