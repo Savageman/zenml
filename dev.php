@@ -24,7 +24,7 @@ debug($template);
 // Intermediate array structure
 debug(Zenml::parse($template));
 
-$rendered = Zenml::render($template, array(
+$vars = array(
     'summary_class' => 'js-summary',
     'title_tag' => 'h4',
     'date' => date('d/m/Y', strtotime('now')),
@@ -32,10 +32,10 @@ $rendered = Zenml::render($template, array(
         array('name' => 'First category'),
         array('name' => 'Another category'),
     ),
-));
-
+);
+debug($vars);
 // Rendering
-debug($rendered);
+debug(Zenml::render($template, $vars));
 
 
 function debug($var)
