@@ -6,12 +6,13 @@ include 'zenml.php';
 $template = <<<TEMPLATE
 header My page title
 div#blog
-    %title_tag.article My article
-    section.summary.%summary_class
-        p.date %date
+    (:title_tag).article
+        a[href=test.html] My article
+    section.summary.(:summary_class)
+        p.date (:date)
     div.content The content goes here
     ++categories div.categories
-        span.category [%name]
+        span.category [(:name)]
     --p No article here
 footer Mon footer
 TEMPLATE;

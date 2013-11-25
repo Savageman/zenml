@@ -16,11 +16,48 @@ class Zenml
         }
         $rendered = array();
         foreach ($structure as $node) {
-            $tag = static::_replaceVars($node['tag'], $vars);
-            // Extract tag name / id / classes
-            $tag_name = preg_match('`^([\w%]+)`', $tag, $m_tag) ? $m_tag[1] : '';
-            $id = preg_match('`#([\w%-]+)`', $tag, $m_tag) ? $m_tag[1] : '';
-            $classes = preg_match_all('`\.([\w%-]+)`', $tag, $m_tag) ? implode(' ', $m_tag[1]) : '';
+
+            $tag = $node['tag'];
+            $offset = 0;
+            $attrs = array();
+            $tag_name = '';
+            while (preg_match('`(?:([\w:(){}]+))|(?:#([\w:(){}-]+))|(?:\.([\w:(){}-]+))|(?:\[([\w:(){}-]+)=([\w:(){}.-]+)\])`', $tag, $m, null, $offset)) {
+                if (!empty($m[1])) {
+                    $tag_name = $m[1];
+                }
+                if (!empty($m[2])) {
+                    $attrs['id'] = $m[2];
+                }
+                if (!empty($m[3])) {
+                    $attrs['class'][] = $m[3];
+                }
+                if (!empty($m[4])) {
+                    $attrs[$m[4]] = $m[5];
+                }
+                if (strlen($m[0]) == 0) {
+                    break;
+                }
+                $offset += strlen($m[0]);
+            }
+            if (!empty($attrs['class'])) {
+                $attrs['class'] = implode(' ', $attrs['class']);
+            }
+            if (empty($tag_name)) {
+                $tag_name = 'div';
+            }
+
+            debug(array(
+                $tag_name => $attrs,
+            ));
+            $tag_name = static::_replaceVars($tag_name, $vars);
+            foreach($attrs as $name => &$value)
+            {
+                $value = static::_replaceVars($value, $vars);
+            }
+            unset($value);
+            debug(array(
+                $tag_name => $attrs,
+            ));
 
             if (!empty($node['children'])) {
                 $text = static::render($node['children'], $vars, $tabs."\t");
@@ -44,8 +81,10 @@ class Zenml
                 }
             }
 
+            $attrs = static::array_to_attr($attrs);
+
             $line = array(
-                sprintf('%s<%s%s%s>', $tabs, $tag_name, !empty($id) ? ' id="'.$id.'"' : '', !empty($classes) ? ' class="'.$classes.'"' : ''),
+                sprintf('%s<%s%s>', $tabs, $tag_name, !empty($attrs) ? ' '.$attrs : ''),
                 $text,
                 (!empty($node['children']) ? $tabs : '' )."</$tag_name>"
             );
@@ -53,6 +92,32 @@ class Zenml
 
         }
         return implode("\n", $rendered);
+    }
+
+    // Credits : FuelPHP framework MIT Licence
+    protected static function array_to_attr($attr)
+    {
+        $attr_str = '';
+
+        foreach ((array) $attr as $property => $value)
+        {
+            // Ignore null/false
+            if ($value === null or $value === false)
+            {
+                continue;
+            }
+
+            // If the key is numeric then it must be something like selected="selected"
+            if (is_numeric($property))
+            {
+                $property = $value;
+            }
+
+            $attr_str .= $property.'="'.$value.'" ';
+        }
+
+        // We strip off the last space for return
+        return trim($attr_str);
     }
 
     /**
@@ -71,7 +136,8 @@ class Zenml
         foreach ($lines as $line)
         {
             // Ignore lines we don't understand
-            if (!preg_match('`^(\s*)(\+\+(\w+)\s|--)?([\w.%#]+)(?:\s(.+))?$`', $line, $m)) {
+            if (!preg_match('`^(\s*)(\+\+(\w+)\s|--)?([\w.%#\[\]=():{}]+)(?:\s(.+))?$`', $line, $m)) {
+                debug(strtoupper($line));
                 continue;
             }
             list(, $indentation, $loop, $loop_name, $tag) = $m;
@@ -134,7 +200,8 @@ class Zenml
             if (is_array($value)) {
                 continue;
             }
-            $text = str_replace('%'.$name, $value, $text);
+            $text = str_replace('(:'.$name.')', $value, $text);
+            $text = str_replace('{'.$name.'}', $value, $text);
         }
         return $text;
     }
