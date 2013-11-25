@@ -116,12 +116,15 @@ class Zenml
                 );
                 $structure = &$previous_node['children'];
                 unset($previous_node);
+                $previous_node = &$node;
             }
             else if ($indentation_level < $previous_indentation_level)
             {
                 // 1 less indentation : retrieve the structure
                 $structure =& $levels[$indentation_level];
                 unset($levels[$indentation_level]);
+                unset($previous_node);
+                $previous_node = &$node;
                 $structure[] = &$node;
             }
             unset($node);
