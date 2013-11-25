@@ -16,9 +16,6 @@ class Zenml
         }
         $rendered = array();
         foreach ($structure as $node) {
-            if (!empty($node['ignore_when']) && empty($vars[$node['ignore_when']])) {
-                continue;
-            }
             $tag = static::_replaceVars($node['tag'], $vars);
             // Extract tag name / id / classes
             $tag_name = preg_match('`^([\w%]+)`', $tag, $m_tag) ? $m_tag[1] : '';
@@ -74,11 +71,11 @@ class Zenml
         foreach ($lines as $line)
         {
             // Ignore lines we don't understand
-            if (!preg_match('`^(\s*)(\+\+(\w+)\s|--)?(?:\!(\w+)\s)?([\w.%#]+)(?:\s(.+))?$`', $line, $m)) {
+            if (!preg_match('`^(\s*)(\+\+(\w+)\s|--)?([\w.%#]+)(?:\s(.+))?$`', $line, $m)) {
                 continue;
             }
-            list(, $indentation, $loop, $loop_name, $ignore_when, $tag) = $m;
-            $text = empty($m[6]) ? '' : $m[6];
+            list(, $indentation, $loop, $loop_name, $tag) = $m;
+            $text = empty($m[5]) ? '' : $m[5];
             $indentation_level = substr_count($indentation, '    ');
 
             $node = array(
@@ -86,9 +83,6 @@ class Zenml
                 'text' => $text,
                 //'debug' => $m,
             );
-            if (!empty($ignore_when)) {
-                $node['ignore_when'] = $ignore_when;
-            }
             if (!empty($loop) && $loop != '--') {
                 $node['loop_name'] = $loop_name;
                 $loops[$indentation_level] = &$node;
