@@ -46,18 +46,12 @@ class Zenml
                 $tag_name = 'div';
             }
 
-            debug(array(
-                $tag_name => $attrs,
-            ));
             $tag_name = static::_replaceVars($tag_name, $vars);
             foreach($attrs as $name => &$value)
             {
                 $value = static::_replaceVars($value, $vars);
             }
             unset($value);
-            debug(array(
-                $tag_name => $attrs,
-            ));
 
             if (!empty($node['children'])) {
                 $text = static::render($node['children'], $vars, $tabs."\t");
