@@ -1,7 +1,6 @@
 <?php
 
 
-
 /**
  * Parser for Zenml syntax, an agnostic template language
  *
@@ -9,87 +8,240 @@
  */
 class Zenml
 {
-    public static function render($structure, $vars = array(), $tabs = "")
+    protected $options = array();
+
+    public function __construct($options = array())
     {
-        if (is_string($structure)) {
-            $structure = static::parse($structure);
+        $options = array_merge(array(
+            'prepend' => '',
+            'indentation' => "\t",
+        ), $options);
+        $this->setOptions($options);
+    }
+
+    public function setOptions(array $options = array())
+    {
+        $this->options = array_merge($this->options, $options);
+    }
+
+    public function render($templateString, $data = array())
+    {
+        // Convert template string to tree based on indentation
+        $tree = static::_indentedTextToArray($templateString);
+        // Figure out which lines contains a tag, a comment or a block
+        $tree = static::_parseTree($tree);
+        // Move children node appropriately and resolve block contexts
+        $parsedTree = static::_parseChildren($tree);
+
+        return $this->_renderParsed($parsedTree, $data, $this->options);
+    }
+
+    protected static function _indentedTextToArray($templateString)
+    {
+        $structure_root = array();
+        $structure = &$structure_root;
+        $levels = array();
+        $lines = explode("\n", $templateString);
+        $previous_indentation_level = 0;
+        foreach ($lines as $line)
+        {
+            preg_match('`^(\s*)(.+)$`', $line, $m);
+            list(, $indentation, $text) = $m;
+            $indentation_level = substr_count($indentation, '    ');
+
+            if ($indentation_level == $previous_indentation_level)
+            {
+                // Same level => Just add the next tag to the list
+                $structure[] = $text;
+            }
+            else if ($indentation_level > $previous_indentation_level)
+            {
+                // 1 more indentation : store the current structure reference
+                $levels[$previous_indentation_level] = &$structure;
+                // Create a new array for the value
+                $children = array();
+                $structure[] =& $children;
+                $structure =& $children;
+                $structure[] = $text;
+                unset($children);
+            }
+            else if ($indentation_level < $previous_indentation_level)
+            {
+                // 1 less indentation : retrieve the structure
+                $structure =& $levels[$indentation_level];
+                unset($levels[$indentation_level]);
+                $structure[] = $text;
+            }
+            $previous_indentation_level = $indentation_level;
         }
+        return $structure_root;
+    }
+
+    protected static function _parseTree($tree, &$context = null)
+    {
+        foreach ($tree as $index => $child)
+        {
+            if (is_array($child)) {
+                $tree[$index] = static::_parseTree($child, $context);
+            } else {
+                if ($child[0] == '%') {
+                    $tag = substr($child, 1);
+                    list($tagName, $attrs) = static::_parseAttrsRegexp($tag);
+
+                    $tree[$index] = array(
+                        'type' => 'tag',
+                        'tag' => array(
+                            'name' => $tagName,
+                            'attrs' => $attrs,
+                        ),
+                    );
+                } else if (preg_match('`^{{\s?#([\w-]+)\s?(?:(\w+)?\s?)(.*)}}$`', $child, $m)) {
+
+                    if (!empty($m[2])) {
+                        $context = $m[2];
+                    }
+                    $attrs = array();
+                    if (!empty($m[3])) {
+                        list(, $attrs) = static::_parseAttrsRegexp('div '.$m[3]);
+                    }
+                    $tree[$index] = array(
+                        'type' => 'block',
+                        'block' => array(
+                            'name' => $m[1],
+                            'context' => $context,
+                            'attrs' => $attrs,
+                        ),
+                    );
+                } else if (preg_match('`^{{\s?-- (.*)}}$`', $child, $m)) {
+                    $tree[$index] = array(
+                        'type' => 'comment',
+                        'comment' => $m[1],
+                    );
+                } else {
+                    $tree[$index] = array(
+                        'type' => 'text',
+                        'text' => $child,
+                    );
+                }
+            }
+        }
+        return $tree;
+    }
+
+    protected static function _parseChildren($tree)
+    {
+        $count = count($tree);
+        for ($i = 0; $i < $count ; $i++) {
+            if (isset($tree[$i + 1]) && !isset($tree[$i + 1]['type'])) {
+                $children = static::_parseChildren($tree[$i + 1]);
+                if (isset($children[0]['type']) && $children[0]['type'] == 'text') {
+                    if ($tree[$i]['type'] == 'tag') {
+                        $tree[$i]['tag']['attrs']['text'] = $children[0]['text'];
+                    } else {
+                        $tree[$i]['text'] = $children[0]['text'];
+                    }
+                } else {
+                    $tree[$i]['children'] = $children;
+                }
+                $i += 1;
+                unset($tree[$i]);
+            }
+        }
+        return $tree;
+    }
+
+    protected static function _renderParsed($structure, $data = array(), $options = array())
+    {
+        $prepend = $options['prepend'];
         $rendered = array();
         foreach ($structure as $node) {
 
-            $tag = $node['tag'];
-            $offset = 0;
-            $attrs = array();
-            $tag_name = '';
-            while (preg_match('`(?:([\w:(){}]+))|(?:#([\w:(){}-]+))|(?:\.([\w:(){}-]+))|(?:\[([\w:(){}-]+)=([\w:(){}.-]+)\])`', $tag, $m, null, $offset)) {
-                if (!empty($m[1])) {
-                    $tag_name = $m[1];
-                }
-                if (!empty($m[2])) {
-                    $attrs['id'] = $m[2];
-                }
-                if (!empty($m[3])) {
-                    $attrs['class'][] = $m[3];
-                }
-                if (!empty($m[4])) {
-                    $attrs[$m[4]] = $m[5];
-                }
-                if (strlen($m[0]) == 0) {
-                    break;
-                }
-                $offset += strlen($m[0]);
-            }
-            if (!empty($attrs['class'])) {
-                $attrs['class'] = implode(' ', $attrs['class']);
-            }
-            if (empty($tag_name)) {
-                $tag_name = 'div';
-            }
-
-            $tag_name = static::_replaceVars($tag_name, $vars);
-            foreach($attrs as $name => &$value)
+            if ($node['type'] == 'comment')
             {
-                $value = static::_replaceVars($value, $vars);
-            }
-            unset($value);
-
-            if (!empty($node['children'])) {
-                $text = static::render($node['children'], $vars, $tabs."\t");
-            } else {
-                $text = static::_replaceVars($node['text'], $vars);
+                //$rendered[] = $prepend.'<!-- '.$node['comment'].'-->';
             }
 
-            if (!empty($node['loop_name'])) {
-                $loop_name = $node['loop_name'];
-                if (!empty($vars[$loop_name])) {
-                    unset($node['loop_name']);
-                    $loop = array();
-                    foreach ($vars[$loop_name] as $loop_vars) {
-                        //$loop_vars = array(array_map(function($v) { return '%'.$v; }, array_keys($loop)), array_values($loop));
-                        $loop[] = static::render($node['children'], $loop_vars, $tabs);
+            if ($node['type'] == 'text')
+            {
+                $rendered[] = $prepend.$node['text'];
+            }
+
+            if ($node['type'] == 'tag')
+            {
+                $tag = $node['tag'];
+                $text = '';
+                $newOptions = $options;
+                if (isset($tag['attrs']['text'])) {
+                    $text = $tag['attrs']['text'];
+                    unset($tag['attrs']['text']);
+
+                    $text = static::_replaceVars($text, $data);
+
+                } else if (!empty($node['children'])) {
+                    $newOptions['prepend'] .= $options['indentation'];
+                    $text = static::_renderParsed($node['children'], $data, $newOptions);
+                }
+
+                $tag_name = static::_replaceVars($tag['name'], $data, '');
+                $attrs = static::_replaceVars(static::_arrayToAttr($tag['attrs']), $data, '');
+
+                $rendered[] = sprintf('%s%s<%s%s>%s%s%s%s</%s>',
+                    $prepend,
+                    empty($tag_name) ? static::_replaceVars($tag['name'], array(), '<!-- {{$1}} missing, fallback to "div" -->') : '',
+                    !empty($tag_name) ? $tag_name : 'div',
+                    !empty($attrs) ? ' '.$attrs : '',
+                    (!empty($node['children']) ? "\n" : ''),
+                    $text,
+                    (!empty($node['children']) ? "\n" : ''),
+                    (!empty($node['children']) ? $prepend : ''),
+                    !empty($tag_name) ? $tag_name : 'div'
+                );
+            }
+
+            if ($node['type'] == 'block')
+            {
+                $block = $node['block'];
+                $context = $block['context'];
+                if ($block['name'] == 'if') {
+                    if (!empty($data[$context])) {
+                        $rendered[] = static::_renderParsed($node['children'], $data, $options);
                     }
-                    $text = $tabs.implode("\n$tabs", $loop);
-                } else if (!empty($node['loop_empty'])) {
-                    $rendered[] = static::render($node['loop_empty'], $vars, $tabs);
-                    continue;
+                }
+                if ($block['name'] == 'each') {
+                    if (!empty($data[$context]) && is_array($data[$context])) {
+                        foreach ($data[$context] as $newData) {
+                            $rendered[] = static::_renderParsed($node['children'], $newData, $options);
+                        }
+                    }
+                }
+                if ($block['name'] == 'empty') {
+                    if (empty($data[$context])) {
+                        $rendered[] = static::_renderParsed($node['children'], $data, $newOptions);
+                    }
                 }
             }
-
-            $attrs = static::array_to_attr($attrs);
-
-            $line = array(
-                sprintf('%s<%s%s>', $tabs, $tag_name, !empty($attrs) ? ' '.$attrs : ''),
-                $text,
-                (!empty($node['children']) ? $tabs : '' )."</$tag_name>"
-            );
-            $rendered[] = implode(!empty($node['children']) ? "\n" : '', $line);
-
         }
         return implode("\n", $rendered);
     }
 
+
+    protected static function _replaceVars($text, $data, $replaceEmpty = null)
+    {
+        if ($replaceEmpty === null) {
+            $replaceEmpty = '<!-- {{$1}} -->';
+        }
+        foreach ($data as $name => $value) {
+            if (is_array($value)) {
+                continue;
+            }
+            $text = preg_replace('`{{\s*(?:this\.)?'.preg_quote($name).'\s*}}`', $value, $text);
+        }
+        $text = preg_replace('`{{\s*([\w-]+)\s*}}`', $replaceEmpty, $text);
+        return $text;
+    }
+
     // Credits : FuelPHP framework MIT Licence
-    protected static function array_to_attr($attr)
+    protected static function _arrayToAttr($attr)
     {
         $attr_str = '';
 
@@ -114,179 +266,65 @@ class Zenml
         return trim($attr_str);
     }
 
-    /**
-     * @param $template
-     * @return static
-     */
-    public static function parse($template)
-    {
-        $structure_root = array();
-        $structure = &$structure_root;
-        $levels = array();
-        $loops = array();
-        $lines = explode("\n", $template);
-        $previous_indentation_level = 0;
-        $previous_text = null;
-        foreach ($lines as $line)
-        {
-            // Ignore lines we don't understand
-            if (!preg_match('`^(\s*)(\+\+(\w+)\s|--)?([\w.%#\[\]=():{}]+)(?:\s(.+))?$`', $line, $m)) {
-                debug(strtoupper($line));
-                continue;
-            }
-            list(, $indentation, $loop, $loop_name, $tag) = $m;
-            $text = empty($m[5]) ? '' : $m[5];
-            $indentation_level = substr_count($indentation, '    ');
+    protected static function _parseAttrsDomDocument($string) {
 
-            $node = array(
-                'tag' => $tag,
-                'text' => $text,
-                //'debug' => $m,
-            );
-            if (!empty($loop) && $loop != '--') {
-                $node['loop_name'] = $loop_name;
-                $loops[$indentation_level] = &$node;
-            }
+        $dom = new \DOMDocument;
+        $explode = explode(' ', $string, 2);
+        $tag = $explode[0];
+        $string = '<'.$tag.(!empty($explode[1]) ? ' '.$explode[1] : '').'>';
+        $dom->loadHtml($string);
+        $dom = $dom->getElementsByTagName($tag)->item(0);
 
-            if ($loop == '--') {
-                $loops[$indentation_level]['loop_empty'][] = &$node;
-                unset($previous_node);
-                $previous_node = &$node;
-                $structure = &$node;
+        $attrs = array();
+        if (!empty($dom)) {
+            foreach ($dom->attributes as $a) {
+                $attrs[ $a->name ] = $a->value;
             }
-            else if ($indentation_level == $previous_indentation_level)
-            {
-                // Same level => Just add the next tag to the list
-                unset($previous_node);
-                $previous_node = &$node;
-                $structure[] = &$previous_node;
-            }
-            else if ($indentation_level > $previous_indentation_level)
-            {
-                // 1 more indentation : store the current structure reference
-                $levels[$previous_indentation_level] = &$structure;
-                $previous_node['children'] = array(
-                    &$node,
-                );
-                $structure = &$previous_node['children'];
-                unset($previous_node);
-                $previous_node = &$node;
-            }
-            else if ($indentation_level < $previous_indentation_level)
-            {
-                // 1 less indentation : retrieve the structure
-                $structure =& $levels[$indentation_level];
-                unset($levels[$indentation_level]);
-                unset($previous_node);
-                $previous_node = &$node;
-                $structure[] = &$node;
-            }
-            unset($node);
-            $previous_indentation_level = $indentation_level;
         }
-
-        return $structure_root;
+        return array($tag, $attrs);
     }
 
-    protected static function _replaceVars($text, array $vars)
-    {
-        foreach ($vars as $name => $value) {
-            if (is_array($value)) {
-                continue;
+    protected static function _parseAttrsRegexp($string) {
+        $offset = 0;
+        $attrs = array();
+        $tag_name = '';
+        while (preg_match('`(?:([\w:{}]+))|(?:\s?#([\w:{}-]+))|(?:\s?\.([\w:{}-]+))|(?:\s?\[([^=]+)=([^\]]+)\])|(?:\s([\w:(){}.-]+)=([\w.]+))|(?:\s([\w:(){}.-]+)="([^"]+))"`', $string, $m, null, $offset)) {
+            // Tag name
+            if (!empty($m[1])) {
+                $tag_name = $m[1];
             }
-            $text = str_replace('(:'.$name.')', $value, $text);
-            $text = str_replace('{'.$name.'}', $value, $text);
+            // #id
+            if (!empty($m[2])) {
+                $attrs['id'] = $m[2];
+            }
+            // .class
+            if (!empty($m[3])) {
+                $attrs['class'][] = $m[3];
+            }
+            // [attribute=value]
+            if (!empty($m[4])) {
+                $attrs[$m[4]] = $m[5];
+            }
+            // attribute=value
+            if (!empty($m[6])) {
+                $attrs[$m[6]] = $m[7];
+            }
+            // attribute="value with space"
+            if (!empty($m[8])) {
+                $attrs[$m[8]] = $m[9];
+            }
+            if (strlen($m[0]) == 0) {
+                break;
+            }
+            $offset += strlen($m[0]);
         }
-        return $text;
+        if (!empty($attrs['class'])) {
+            $attrs['class'] = implode(' ', $attrs['class']);
+        }
+        if (empty($tag_name)) {
+            $tag_name = 'div';
+        }
+        return array($tag_name, $attrs);
     }
 }
 
-
-/**
- * Old parser for simple syntax and simple structure
- *
- * Class ZenmlSimple
- */
-class ZenmlSimple
-{
-    public static function parse($template)
-    {
-        $structure_root = array();
-        $structure = &$structure_root;
-        $levels = array();
-        $lines = explode("\n", $template);
-        $previous_indentation_level = 0;
-        $previous_text = null;
-        foreach ($lines as $line)
-        {
-            preg_match('`^(\s*)(.+)$`', $line, $m);
-            $indentation_level = substr_count($m[1], '    ');
-            $line = explode(' ', $m[2], 2);
-            list($tag) = $line;
-            $text = empty($line[1]) ? '' : $line[1];
-            if ($indentation_level == $previous_indentation_level)
-            {
-                // Same level => Just add the next tag to the list
-                unset($previous_text);
-                $previous_text = &$text;
-                $structure[$tag] = &$previous_text;
-                unset($text);
-            }
-            else if ($indentation_level > $previous_indentation_level)
-            {
-                // 1 more indentation : store the current structure reference
-                $levels[$previous_indentation_level] = &$structure;
-                // Create a new array for the value
-                $previous_text = array($tag => $text);
-                $structure = &$previous_text;
-                unset($previous_text);
-            }
-            else if ($indentation_level < $previous_indentation_level)
-            {
-                // 1 less indentation : retrieve the structure
-                $structure =& $levels[$indentation_level];
-                unset($levels[$indentation_level]);
-                $structure[$tag] = $text;
-                unset($text);
-            }
-            $previous_indentation_level = $indentation_level;
-        }
-        return $structure_root;
-    }
-
-    public static function render($structure, $vars, $tabs = "")
-    {
-        if (is_string($structure)) {
-            $structure = static::parse($structure);
-        }
-        $rendered = array();
-        foreach ($structure as $tag => $text) {
-            $tag = static::_replaceVars($tag, $vars);
-            // Extract tag name / id / classes
-            $tag_name = preg_match('`^([\w%]+)`', $tag, $m_tag) ? $m_tag[1] : '';
-            $id = preg_match('`#([\w%]+)`', $tag, $m_tag) ? $m_tag[1] : '';
-            $classes = preg_match_all('`\.([\w%]+)`', $tag, $m_tag) ? implode(' ', $m_tag[1]) : '';
-
-            $text = static::_replaceVars($text, $vars);
-
-            $line = array(
-                sprintf('%s<%s%s%s>', $tabs, $tag_name, !empty($id) ? ' id="'.$id.'"' : '', !empty($classes) ? ' class="'.$classes.'"' : ''),
-                is_array($text) ? static::render($text, $vars, $tabs."\t") : $text,
-                (is_array($text) ? $tabs : '' )."</$tag_name>"
-            );
-            $rendered[] = implode(is_array($text) ? "\n" : '', $line);
-        }
-        return implode("\n", $rendered);
-    }
-
-    protected static function _replaceVars($text, $vars)
-    {
-        foreach ($vars as $name => $value) {
-            if (is_array($value)) {
-                continue;
-            }
-            $text = str_replace('%'.$name, $value, $text);
-        }
-        return $text;
-    }
-}

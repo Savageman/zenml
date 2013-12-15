@@ -3,21 +3,22 @@ ZenML
 
 This little project aims to use "Zen Coding" (which has now been renamed "Emmet") as a markup language to write template files.
 
-It's very early stage, you can still look around and even contribute if you want!
+It's early stage, you can still look around and even contribute if you want!
 
 Quick guide
 -----------
 
-One HTML tag per line using Zen Coding syntax : `div#id.class1.class2 Some text here`
+One HTML tag per line using Zen Coding syntax : `div#id.class1.class2`
 
 Nesting is done using indentation :
 ```
-h1#title Check this out:
-article
-    span.date 21/11/2013
-    h2
-        a[href=example.html] ZenML template example
-p This paragraph is below the article tag.
+%h1#title text="Check this out:"
+%article
+    %span .date text="21/11/2013"
+    %h2
+        %a [href=example.html]
+            ZenML template example
+%p[text=This paragraph is below the article tag.]
 ```
 
 Will be rendered:
@@ -33,23 +34,26 @@ Will be rendered:
 <p>This paragraph is below the article tag.</p>
 ```
 
-**Variables** can be inserted with 2 syntaxs `(:var)` or `{var}`.
+**Variables** can be inserted with the Mustache syntax `{{var}}`.
 
-Variables followed by a single or double bang will allow respectively yo deny an attribute or an entire line using based on its emptyness :
-* `span.(:var1!) Text` will render as `<span>Text</span>` when `(:var1)` is empty.
-* `span.(:var2) Text` will not render at all when `(:var1)` is empty.
-
-
-**Commands** are not implemented yet, here is how I plan to do them:
-```
-p You can find my articles below:
--- loop articles --
-    article
-        span.date {date}
-        h2 {title}
-        div.summary {summary!}
-p Thanks for coming here and reading my articles.
+**Commands** can be inserted using the Handlebars syntax `{{#command}}`. Currently, only 3 commands are available:
+`#if`, `#each` and `#empty`.
 
 ```
+%p text="You can find my articles below:"
+{{ #each articles }}
+    %article
+        %span.date text="{{date}}"
+        %h2 text="{{title}}"
+        %div.summary
+            {{summary}}
+%p text="Thanks for coming here and reading my articles."
+```
 
-Here's a quick list to remind me what to start with: `loop`, `empty`, `!empty`, `raw` (to insert raw text or html), `zenml` (to restore parser), `include`.
+Things I need to do next
+------------------------
+
+* Make command configurable using a callback,
+* The `#include` command,
+* Killer-feature: add rules based on tag / class / id
+* "Internal" `@vars` (i.e. `@text` var in a tag to re-use the text content, `@first` `@odd` and `@even` vars inside a loop),
