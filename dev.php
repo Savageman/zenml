@@ -11,7 +11,8 @@ $template = <<<TEMPLATE
         %a href=test.html title="My article"
             My article
     %section .summary .{{summary_class}}
-        %p .date text="{{date}}"
+        %p .date
+            {{ #dateFormat date format="d/m/Y H:i:s" }}
     %div .content
         The content goes here
     {{ #if categories }}
@@ -32,10 +33,18 @@ $zenml = new Zenml_Engine(array(
     'indentation' => "\t",
 ));
 
+$zenml->registerBlock('dateFormat', function($zenml, $node, $data, $context) {
+    $zenml(array(
+        array(
+            'type' => 'text',
+            'text' => date($node['block']['attrs']['format'], is_numeric($data[$context]) ? $data[$context] : strtotime(str_replace('/', '-', $data[$context]))),
+        )));
+});
+
 $data = array(
     'summary_class' => 'js-summary',
     'title_tag' => 'h4',
-    'date' => date('d/m/Y', strtotime('now')),
+    'date' => strtotime('now'),
     'categories' => array(
         array('name' => 'First category'),
         array('name' => 'Another category'),

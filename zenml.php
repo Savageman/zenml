@@ -16,12 +16,38 @@ class Zenml_Engine
             'prepend' => '',
             'indentation' => "\t",
         ), $options);
+
+        $this->blocks = array(
+            'each' => function($zenml, $node, $data, $context, $options) {
+                if (!empty($data[$context]) && is_array($data[$context])) {
+                    foreach ($data[$context] as $newData) {
+                        $zenml($node['children'], $newData, $options);
+                    }
+                }
+            },
+            'if' => function($zenml, $node, $data, $context) {
+                if (!empty($data[$context])) {
+                    $zenml($node['children']);
+                }
+            },
+            'empty' => function($zenml, $node, $data, $context) {
+                if (empty($data[$context])) {
+                    $zenml($node['children']);
+                }
+            },
+        );
+
         $this->setOptions($options);
     }
 
     public function setOptions(array $options = array())
     {
         $this->options = array_merge($this->options, $options);
+    }
+
+    public function registerBlock($name, $callback)
+    {
+        $this->blocks[$name] = $callback;
     }
 
     public function render($templateString, $data = array())
@@ -33,7 +59,7 @@ class Zenml_Engine
         // Move children node appropriately and resolve block contexts
         $parsedTree = static::_parseChildren($tree);
 
-        $zenml = new Zenml_Template();
+        $zenml = new Zenml_Template($this->blocks);
 
         return $zenml->render($parsedTree, $data, $this->options);
     }
@@ -196,10 +222,18 @@ class Zenml_Engine
 
 /**
  * Rendering for Zenml syntax, an agnostic template language
+ *
  * Class Zenml_Template
  */
 class Zenml_Template
 {
+    protected $blocks = array();
+
+    public function __construct($blocks)
+    {
+        $this->blocks = $blocks;
+    }
+
     public function render($tree, $data = array(), $options = array())
     {
         $prepend = $options['prepend'];
@@ -255,17 +289,17 @@ class Zenml_Template
             {
                 $block = $node['block'];
                 $context = $block['context'];
-                if ($block['name'] == 'if') {
-                    if (!empty($data[$context])) {
-                        $rendered[] = $this->render($node['children'], $data, $options);
-                    }
-                }
-                if ($block['name'] == 'each') {
-                    if (!empty($data[$context]) && is_array($data[$context])) {
-                        foreach ($data[$context] as $newData) {
-                            $rendered[] = $this->render($node['children'], $newData, $options);
+                $self = $this;
+                if (!empty($this->blocks[$block['name']]) && is_callable($this->blocks[$block['name']])) {
+                    call_user_func($this->blocks[$block['name']], function($children, $data2 = null, $options2 = null) use ($self, &$rendered, $data, $options) {
+                        if (empty($data2)) {
+                            $data2 = $data;
                         }
-                    }
+                        if (empty($options2)) {
+                            $options2 = $options;
+                        }
+                        $rendered[] = $self->render($children, $data2, $options2);
+                    }, $node, $data, $context, $options);
                 }
             }
         }
