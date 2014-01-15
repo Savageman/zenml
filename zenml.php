@@ -4,9 +4,9 @@
 /**
  * Parser for Zenml syntax, an agnostic template language
  *
- * Class Zenml
+ * Class Zenml_Engine
  */
-class Zenml
+class Zenml_Engine
 {
     protected $options = array();
 
@@ -33,7 +33,9 @@ class Zenml
         // Move children node appropriately and resolve block contexts
         $parsedTree = static::_parseChildren($tree);
 
-        return $this->_renderParsed($parsedTree, $data, $this->options);
+        $zenml = new Zenml_Template();
+
+        return $zenml->render($parsedTree, $data, $this->options);
     }
 
     protected static function _indentedTextToArray($templateString)
@@ -85,6 +87,8 @@ class Zenml
                 $tree[$index] = static::_parseTree($child, $context);
             } else {
                 if ($child[0] == '%') {
+                    // Allow spaces inside the template tags?
+                    $child = preg_replace('`{{\s+(\S+)\s+}}`', '{{$1}}', $child);
                     preg_match('`^%([\w{}]+)`', $child, $m);
                     $tag = $m[1];
                     $attrs = static::_parseAttrs(substr($child, strlen($tag) + 1));
@@ -96,15 +100,12 @@ class Zenml
                             'attrs' => $attrs,
                         ),
                     );
-                } else if (preg_match('`^{{\s?#([\w-]+)\s?(?:(\w+)?\s?)(.*)}}$`', $child, $m)) {
+                } else if (preg_match('`^{{\s*#([\w-]+)\s*(?:(\w+))?\s(.*)}}$`', $child, $m)) {
 
                     if (!empty($m[2])) {
                         $context = $m[2];
                     }
-                    $attrs = array();
-                    if (!empty($m[3])) {
-                        list(, $attrs) = static::_parseAttrs($m[3]);
-                    }
+                    $attrs = !empty($m[3]) ? static::_parseAttrs(preg_replace('`{{\s+(\S+)\s+}}`', '{{$1}}', $m[3])) : array();
                     $tree[$index] = array(
                         'type' => 'block',
                         'block' => array(
@@ -151,11 +152,62 @@ class Zenml
         return $tree;
     }
 
-    protected static function _renderParsed($structure, $data = array(), $options = array())
+    protected static function _parseAttrs($string) {
+        preg_match('`#([\w{}-]+)(?=\s|$)`', $string, $matches, PREG_OFFSET_CAPTURE);
+        $id = null;
+        if (!empty($matches[1])) {
+            $id = $matches[1][0];
+            $string = substr_replace($string, '', $matches[0][1], strlen($matches[0][0]));
+        }
+        preg_match_all('`\.([\w:{}-]+)(?=\s|$)`', $string, $matches, PREG_OFFSET_CAPTURE);
+        $classes = null;
+        if (!empty($matches[1])) {
+            $offset = 0;
+            $classes = array();
+            foreach ($matches[0] as $mid => $match) {
+                list($class, $pos) = $match;
+                $classes[] = $matches[1][$mid][0];
+                $length = strlen($class);
+                $string = substr_replace($string, '', $pos + $offset, $length);
+                $offset -= $length;
+            }
+        }
+
+        // Allow un-quoted attributes
+        $string = preg_replace('`(\s\w+)=([^"\s]+)`', '$1="$2"', "<div $string />");
+        $a = new SimpleXMLElement($string);
+        $r = (array) $a->attributes();
+        $attributes = !empty($r['@attributes']) ? $r['@attributes'] : array();
+
+        if ($id !== null) {
+            $attributes['id'] = $id;
+        }
+        if ($classes !== null) {
+            if (empty($attributes['class'])) {
+                $attributes['class'] = '';
+            } else {
+                $attributes['class'] .= ' ';
+            }
+            $attributes['class'] .= implode(' ', $classes);
+        }
+        return $attributes;
+    }
+}
+
+/**
+ * Rendering for Zenml syntax, an agnostic template language
+ * Class Zenml_Template
+ */
+class Zenml_Template
+{
+    public function render($tree, $data = array(), $options = array())
     {
         $prepend = $options['prepend'];
         $rendered = array();
-        foreach ($structure as $node) {
+        if (!is_array($tree)) {
+            return static::_replaceVars($tree, $data);
+        }
+        foreach ($tree as $node) {
 
             if ($node['type'] == 'comment')
             {
@@ -176,11 +228,11 @@ class Zenml
                     $text = $tag['attrs']['text'];
                     unset($tag['attrs']['text']);
 
-                    $text = static::_replaceVars($text, $data);
+                    $text = $this->render($text, $data, $options);
 
                 } else if (!empty($node['children'])) {
                     $newOptions['prepend'] .= $options['indentation'];
-                    $text = static::_renderParsed($node['children'], $data, $newOptions);
+                    $text = $this->render($node['children'], $data, $newOptions);
                 }
 
                 $tag_name = static::_replaceVars($tag['name'], $data, '');
@@ -205,26 +257,20 @@ class Zenml
                 $context = $block['context'];
                 if ($block['name'] == 'if') {
                     if (!empty($data[$context])) {
-                        $rendered[] = static::_renderParsed($node['children'], $data, $options);
+                        $rendered[] = $this->render($node['children'], $data, $options);
                     }
                 }
                 if ($block['name'] == 'each') {
                     if (!empty($data[$context]) && is_array($data[$context])) {
                         foreach ($data[$context] as $newData) {
-                            $rendered[] = static::_renderParsed($node['children'], $newData, $options);
+                            $rendered[] = $this->render($node['children'], $newData, $options);
                         }
-                    }
-                }
-                if ($block['name'] == 'empty') {
-                    if (empty($data[$context])) {
-                        $rendered[] = static::_renderParsed($node['children'], $data, $newOptions);
                     }
                 }
             }
         }
         return implode("\n", $rendered);
     }
-
 
     protected static function _replaceVars($text, $data, $replaceEmpty = null)
     {
@@ -265,47 +311,6 @@ class Zenml
 
         // We strip off the last space for return
         return trim($attr_str);
-    }
-
-    protected static function _parseAttrs($string) {
-        preg_match('`#([\w{}-]+)(?=\s|$)`', $string, $matches, PREG_OFFSET_CAPTURE);
-        $id = null;
-        if (!empty($matches[1])) {
-            $id = $matches[1][0];
-            $string = substr_replace($string, '', $matches[0][1], strlen($matches[0][0]));
-        }
-        preg_match_all('`\s\.([\w:{}-]+)(?=\s|$)`', $string, $matches, PREG_OFFSET_CAPTURE);
-        $classes = null;
-        if (!empty($matches[1])) {
-            $offset = 0;
-            $classes = array();
-            foreach ($matches[0] as $mid => $match) {
-                list($class, $pos) = $match;
-                $classes[] = $matches[1][$mid][0];
-                $length = strlen($class);
-                $string = substr_replace($string, '', $pos + $offset, $length);
-                $offset -= $length;
-            }
-        }
-
-        // Allow un-quoted attributes
-        $string = preg_replace('`(\s\w+)=([^"\s]+)`', '$1="$2"', "<div $string />");
-        $a = new SimpleXMLElement($string);
-        $r = (array) $a->attributes();
-        $attributes = !empty($r['@attributes']) ? $r['@attributes'] : array();
-
-        if ($id !== null) {
-            $attributes['id'] = $id;
-        }
-        if ($classes !== null) {
-            if (empty($attributes['class'])) {
-                $attributes['class'] = '';
-            } else {
-                $attributes['class'] .= ' ';
-            }
-            $attributes['class'] .= implode(' ', $classes);
-        }
-        return $attributes;
     }
 }
 

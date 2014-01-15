@@ -27,7 +27,7 @@ $template = <<<TEMPLATE
 TEMPLATE;
 
 // Incoming string
-$zenml = new Zenml(array(
+$zenml = new Zenml_Engine(array(
     'prepend' => '  ',
     'indentation' => "\t",
 ));
