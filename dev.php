@@ -7,15 +7,15 @@ $template = <<<TEMPLATE
 %header #header
     My page title
 %div #blog .class
-    %{{title_tag}}.article
+    %{{title_tag}} .article
         %a href=test.html title="My article"
             My article
     %section .summary .{{summary_class}}
         %p .date text="{{date}}"
-    %div.content
+    %div .content
         The content goes here
     {{ #if categories }}
-        %div.categories
+        %div .categories
             {{ -- idem "categories" est facultatif  }}
             {{ #each }}
                 {{ -- {{ this.name }} == {{ name }}  }}

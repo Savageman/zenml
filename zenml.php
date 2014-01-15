@@ -85,13 +85,14 @@ class Zenml
                 $tree[$index] = static::_parseTree($child, $context);
             } else {
                 if ($child[0] == '%') {
-                    $tag = substr($child, 1);
-                    list($tagName, $attrs) = static::_parseAttrsRegexp($tag);
+                    preg_match('`^%([\w{}]+)`', $child, $m);
+                    $tag = $m[1];
+                    $attrs = static::_parseAttrs(substr($child, strlen($tag) + 1));
 
                     $tree[$index] = array(
                         'type' => 'tag',
                         'tag' => array(
-                            'name' => $tagName,
+                            'name' => $tag,
                             'attrs' => $attrs,
                         ),
                     );
@@ -102,7 +103,7 @@ class Zenml
                     }
                     $attrs = array();
                     if (!empty($m[3])) {
-                        list(, $attrs) = static::_parseAttrsRegexp('div '.$m[3]);
+                        list(, $attrs) = static::_parseAttrs($m[3]);
                     }
                     $tree[$index] = array(
                         'type' => 'block',
@@ -266,65 +267,45 @@ class Zenml
         return trim($attr_str);
     }
 
-    protected static function _parseAttrsDomDocument($string) {
+    protected static function _parseAttrs($string) {
+        preg_match('`#([\w{}-]+)(?=\s|$)`', $string, $matches, PREG_OFFSET_CAPTURE);
+        $id = null;
+        if (!empty($matches[1])) {
+            $id = $matches[1][0];
+            $string = substr_replace($string, '', $matches[0][1], strlen($matches[0][0]));
+        }
+        preg_match_all('`\s\.([\w:{}-]+)(?=\s|$)`', $string, $matches, PREG_OFFSET_CAPTURE);
+        $classes = null;
+        if (!empty($matches[1])) {
+            $offset = 0;
+            $classes = array();
+            foreach ($matches[0] as $mid => $match) {
+                list($class, $pos) = $match;
+                $classes[] = $matches[1][$mid][0];
+                $length = strlen($class);
+                $string = substr_replace($string, '', $pos + $offset, $length);
+                $offset -= $length;
+            }
+        }
 
-        $dom = new \DOMDocument;
-        $explode = explode(' ', $string, 2);
-        $tag = $explode[0];
-        $string = '<'.$tag.(!empty($explode[1]) ? ' '.$explode[1] : '').'>';
-        $dom->loadHtml($string);
-        $dom = $dom->getElementsByTagName($tag)->item(0);
+        // Allow un-quoted attributes
+        $string = preg_replace('`(\s\w+)=([^"\s]+)`', '$1="$2"', "<div $string />");
+        $a = new SimpleXMLElement($string);
+        $r = (array) $a->attributes();
+        $attributes = !empty($r['@attributes']) ? $r['@attributes'] : array();
 
-        $attrs = array();
-        if (!empty($dom)) {
-            foreach ($dom->attributes as $a) {
-                $attrs[ $a->name ] = $a->value;
-            }
+        if ($id !== null) {
+            $attributes['id'] = $id;
         }
-        return array($tag, $attrs);
-    }
-
-    protected static function _parseAttrsRegexp($string) {
-        $offset = 0;
-        $attrs = array();
-        $tag_name = '';
-        while (preg_match('`(?:([\w:{}]+))|(?:\s?#([\w:{}-]+))|(?:\s?\.([\w:{}-]+))|(?:\s?\[([^=]+)=([^\]]+)\])|(?:\s([\w:(){}.-]+)=([\w.]+))|(?:\s([\w:(){}.-]+)="([^"]+))"`', $string, $m, null, $offset)) {
-            // Tag name
-            if (!empty($m[1])) {
-                $tag_name = $m[1];
+        if ($classes !== null) {
+            if (empty($attributes['class'])) {
+                $attributes['class'] = '';
+            } else {
+                $attributes['class'] .= ' ';
             }
-            // #id
-            if (!empty($m[2])) {
-                $attrs['id'] = $m[2];
-            }
-            // .class
-            if (!empty($m[3])) {
-                $attrs['class'][] = $m[3];
-            }
-            // [attribute=value]
-            if (!empty($m[4])) {
-                $attrs[$m[4]] = $m[5];
-            }
-            // attribute=value
-            if (!empty($m[6])) {
-                $attrs[$m[6]] = $m[7];
-            }
-            // attribute="value with space"
-            if (!empty($m[8])) {
-                $attrs[$m[8]] = $m[9];
-            }
-            if (strlen($m[0]) == 0) {
-                break;
-            }
-            $offset += strlen($m[0]);
+            $attributes['class'] .= implode(' ', $classes);
         }
-        if (!empty($attrs['class'])) {
-            $attrs['class'] = implode(' ', $attrs['class']);
-        }
-        if (empty($tag_name)) {
-            $tag_name = 'div';
-        }
-        return array($tag_name, $attrs);
+        return $attributes;
     }
 }
 
