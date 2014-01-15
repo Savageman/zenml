@@ -8,7 +8,7 @@ It's early stage, you can still look around and even contribute if you want!
 Quick guide
 -----------
 
-One HTML tag per line using Zen Coding syntax : `div#id.class1.class2`
+One HTML tag per line using Zen Coding syntax : `div #id .class1 .class2`
 
 Nesting is done using indentation :
 ```
@@ -16,9 +16,9 @@ Nesting is done using indentation :
 %article
     %span .date text="21/11/2013"
     %h2
-        %a [href=example.html]
+        %a href="example.html"
             ZenML template example
-%p[text=This paragraph is below the article tag.]
+%p text="This paragraph is below the article tag."
 ```
 
 Will be rendered:
@@ -43,9 +43,9 @@ Will be rendered:
 %p text="You can find my articles below:"
 {{ #each articles }}
     %article
-        %span.date text="{{date}}"
+        %span .date text="{{date}}"
         %h2 text="{{title}}"
-        %div.summary
+        %div .summary
             {{summary}}
 %p text="Thanks for coming here and reading my articles."
 ```
