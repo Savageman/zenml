@@ -1,0 +1,25 @@
+{
+    "name": "savageman/handlebars",
+    "description": "Converts Hamlbar-like string to Handlebars template",
+    "type": "library",
+    "keywords": ["templating", "handlebars", "haml"],
+    "homepage": "https://www.github.com/Savageman/zenml",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Julian Espérat (Savageman)",
+            "email": "savageman86@gmail.com"
+        }
+    ],
+    "require": {
+        "php": ">=5.3.0"
+    },
+    "suggest": {
+        "voodoophp/handlebars": "Handlebars for PHP. You can use it after Zenml pre-processing."
+    },
+    "autoload": {
+        "psr-0": {
+            "Zenml\\": "src/"
+        }
+    }
+}
