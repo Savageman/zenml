@@ -3,7 +3,7 @@ ZenML
 
 I love Handlebars, but I find it still lacks indentation-based DOM tree (like Haml) & Emmet/CSS syntax for ID and classes.
 
-So I made this pre-processor to solve the problem. It's generates Handlebars.
+So I made this pre-processor to solve the problem. It generates Handlebars.
 
 Quick guide
 -----------
