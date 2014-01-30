@@ -1,5 +1,5 @@
 {
-    "name": "savageman/handlebars",
+    "name": "savageman/zenml",
     "description": "Converts Hamlbar-like string to Handlebars template",
     "type": "library",
     "keywords": ["templating", "handlebars", "haml"],
