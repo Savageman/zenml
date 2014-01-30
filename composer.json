@@ -18,7 +18,7 @@
         "voodoophp/handlebars": "Handlebars for PHP. You can use it after Zenml pre-processing."
     },
     "autoload": {
-        "psr-0": {
+        "psr-4": {
             "Zenml\\": "src/"
         }
     }
