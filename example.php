@@ -5,7 +5,7 @@ include '../../autoload.php';
 
 // Zen/Emmet coding + Haml indentation + Handlebars helpers
 $template = <<<TEMPLATE
-%tag id="test"
+%div id="test"
     %p text="First line"
     %p text="Second line"
 Plain-text for the end
@@ -17,7 +17,7 @@ $zenml = new Zenml\Zenml(array(
     'output_indentation' => '    ',
 ));
 
-d($zenml->render($template));
+echo htmlspecialchars($zenml->render($template));
 
 
 // Debugging

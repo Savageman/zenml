@@ -44,7 +44,6 @@ class Zenml
         $tree = static::_parseTree($tree);
         // Move children nodes appropriately (to prepare rendering)
         $parsedTree = static::_parseChildren($tree);
-        debug($parsedTree);
 
         return static::_renderParsed($parsedTree, $this->options);
     }

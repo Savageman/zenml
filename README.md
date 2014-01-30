@@ -64,6 +64,27 @@ is converted into:
 </footer>
 ```
 
+
+Usage
+-----
+
+```php
+$template = <<<TEMPLATE
+%div id="test"
+    %p text="First line"
+    %p text="Second line"
+Plain-text for the end
+TEMPLATE;
+
+$zenml = new Zenml\Zenml(array(
+    'prepend' => '',
+    'input_indentation' => '    ',
+    'output_indentation' => '    ',
+));
+
+echo htmlspecialchars($zenml->render($template));
+```
+
 Limitations
 -----------
 
